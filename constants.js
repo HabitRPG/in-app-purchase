@@ -8,7 +8,6 @@ exports.SERVICES = {
 	WINDOWS: 'windows',
 	AMAZON: 'amazon',
 	ROKU: 'roku',
-	FACEBOOK: 'facebook'
 };
 
 exports.UNITY = {
