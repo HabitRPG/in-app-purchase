@@ -4,7 +4,6 @@ var async = require('./lib/async');
 
 var apple = require('./lib/apple');
 var google = require('./lib/google');
-var windows = require('./lib/windows');
 var amazonManager = require('./lib/amazonManager');
 var roku = require('./lib/roku');
 var constants = require('./constants');
@@ -28,17 +27,14 @@ function handlePromisedFunctionCb(resolve, reject) {
     };
 }
 
-module.exports.UNITY = constants.SERVICES.UNITY;
 module.exports.APPLE = constants.SERVICES.APPLE;
 module.exports.GOOGLE = constants.SERVICES.GOOGLE;
-module.exports.WINDOWS = constants.SERVICES.WINDOWS;
 module.exports.AMAZON = constants.SERVICES.AMAZON;
 module.exports.ROKU = constants.SERVICES.ROKU;
 
 module.exports.config = function (configIn) {
     apple.readConfig(configIn);
     google.readConfig(configIn);
-    windows.readConfig(configIn);
     amazon = amazonManager.create(configIn);
     roku.readConfig(configIn);
     verbose.setup(configIn);
@@ -67,14 +63,8 @@ module.exports.getService = function (receipt) {
     if (!receipt) {
         throw new Error('Receipt was null or undefined');
     }
-    if (receipt.indexOf && receipt.indexOf(IS_WINDOWS) !== -1) {
-        return module.exports.WINDOWS;
-    }
     if (typeof receipt === 'object') {
-        // receipt could be either Google, Amazon, or Unity (Apple or Google or Amazon)
-        if (isUnityReceipt(receipt)) {
-            return module.exports.UNITY;
-        }
+        // receipt could be either Google, Amazon
         if (receipt.signature) {
             return module.exports.GOOGLE;
         } else if (receipt.purchaseToken) {
@@ -91,11 +81,8 @@ module.exports.getService = function (receipt) {
         }
     }
     try {
-        // receipt could be either Google, Amazon, or Unity (Apple or Google or Amazon)
+        // receipt could be either Google, Amazon
         var parsed = JSON.parse(receipt);
-        if (isUnityReceipt(parsed)) {
-            return module.exports.UNITY;
-        }
         if (parsed.signature) {
             return module.exports.GOOGLE;
         } else if (parsed.purchaseToken) {
@@ -131,20 +118,12 @@ module.exports.validate = function (service, receipt, cb) {
         });
     }
 
-    if (service === module.exports.UNITY) {
-        service = getServiceFromUnityReceipt(receipt);
-        receipt = parseUnityReceipt(receipt);
-    }
-
     switch (service) {
         case module.exports.APPLE:
             apple.validatePurchase(null, receipt, cb);
             break;
         case module.exports.GOOGLE:
             google.validatePurchase(null, receipt, cb);
-            break;
-        case module.exports.WINDOWS:
-            windows.validatePurchase(receipt, cb);
             break;
         case module.exports.AMAZON:
             amazon.validatePurchase(null, receipt, cb);
@@ -181,12 +160,8 @@ module.exports.validateOnce = function (service, secretOrPubKey, receipt, cb) {
         });
     }
 
-    if (service === module.exports.UNITY) {
-        service = getServiceFromUnityReceipt(receipt);
-        receipt = parseUnityReceipt(receipt);
-    }
 
-    if (!secretOrPubKey && service !== module.exports.APPLE && service !== module.exports.WINDOWS) {
+    if (!secretOrPubKey && service !== module.exports.APPLE) {
         verbose.log('<.validateOnce>', service, receipt);
         return cb(new Error('missing secret or public key for dynamic validation:' + service));
     }
@@ -197,9 +172,6 @@ module.exports.validateOnce = function (service, secretOrPubKey, receipt, cb) {
             break;
         case module.exports.GOOGLE:
             google.validatePurchase(secretOrPubKey, receipt, cb);
-            break;
-        case module.exports.WINDOWS:
-            windows.validatePurchase(receipt, cb);
             break;
         case module.exports.AMAZON:
             amazon.validatePurchase(secretOrPubKey, receipt, cb);
@@ -259,8 +231,6 @@ module.exports.getPurchaseData = function (purchaseData, options) {
             return apple.getPurchaseData(purchaseData, options);
         case module.exports.GOOGLE:
             return google.getPurchaseData(purchaseData, options);
-        case module.exports.WINDOWS:
-            return windows.getPurchaseData(purchaseData, options);
         case module.exports.AMAZON:
             return amazon.getPurchaseData(purchaseData, options);
         case module.exports.ROKU:
@@ -293,75 +263,6 @@ module.exports.resetAmazonValidationHost = function () {
     }
     return false;
 };
-
-function isUnityReceipt(receipt) {
-    if (receipt.Store) {
-        if (
-            receipt.Store === constants.UNITY.GOOGLE ||
-            receipt.Store === constants.UNITY.APPLE ||
-            receipt.Store === constants.UNITY.AMAZON
-        ) {
-            return true;
-        }
-    }
-    return false;
-}
-
-function getServiceFromUnityReceipt(receipt) {
-    if (typeof receipt !== 'object') {
-        // at this point we have already established the fact that receipt is a valid JSON string
-        receipt = JSON.parse(receipt);
-    }
-    switch (receipt.Store) {
-        case constants.UNITY.GOOGLE:
-            return module.exports.GOOGLE;
-        case constants.UNITY.APPLE:
-            return module.exports.APPLE;
-        case constants.UNITY.AMAZON:
-            return module.exports.AMAZON;
-    }
-    // invalid Store value
-    return null;
-}
-
-function parseUnityReceipt(receipt) {
-    verbose.log('Parse Unity receipt as ' + receipt.Store);
-    if (typeof receipt !== 'object') {
-        // at this point we have already established the fact that receipt is a valid JSON string
-        receipt = JSON.parse(receipt);
-    }
-    switch (receipt.Store) {
-        case constants.UNITY.GOOGLE:
-            if (typeof receipt.Payload === 'string') {
-                try {
-                    receipt.Payload = JSON.parse(receipt.Payload);
-                } catch (error) {
-                    throw error;
-                }
-            }
-            var payloadContent = typeof receipt.Payload.json !== 'object' ? JSON.parse(receipt.Payload.json) : receipt.Payload.json;
-            return {
-                data: receipt.Payload.json,
-                signature: receipt.Payload.signature,
-                // add field necessary to use google service account
-                packageName: payloadContent.packageName,
-                productId: payloadContent.productId,
-                purchaseToken: payloadContent.purchaseToken,
-                subscription: (receipt.Subscription !== undefined && receipt.Subscription)
-            };
-        case constants.UNITY.AMAZON:
-            if (typeof receipt.Payload === 'string') {
-                try {
-                    receipt.Payload = JSON.parse(receipt.Payload);
-                } catch (error) {
-                    throw error;
-                }
-            }
-            return receipt.Payload;
-        case constants.UNITY.APPLE:
-            return receipt.Payload;
-    }
-}
 
 // test use only
 module.exports.reset = function () {
